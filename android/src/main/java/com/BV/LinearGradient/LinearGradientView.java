@@ -1,144 +1,115 @@
 package com.BV.LinearGradient;
 
+import com.facebook.react.bridge.ReadableArray;
+
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
 import android.graphics.Shader;
-import android.util.Log;
 import android.view.View;
-
-import com.facebook.react.bridge.ReadableArray;
-import com.facebook.react.uimanager.CatalystStylesDiffMap;
-
 
 public class LinearGradientView extends View {
 
-    public static Paint mPaint;
-    public static LinearGradient mShader;
-    public static float[] mLocations;
-    public static int[] mStartPos;
-    public static int[] mEndPos;
-    public static int[] mColors;
+    private final Paint mPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private Path mPathForBorderRadius;
+    private RectF mTempRectForBorderRadius;
+    private LinearGradient mShader;
 
-    public LinearGradientView(Context context, CatalystStylesDiffMap props) {
-        super(context, null);
-
-        mPaint = new Paint();
-
-        ReadableArray colors = props.getArray("colors");
-
-        //If we managed to get here and not get colors... give up.
-        assert colors != null;
-        mColors = new int[colors.size()];
-        for (int i=0; i < mColors.length; i++)
-        {
-            mColors[i] = colors.getInt(i);
-        }
+    private float[] mLocations;
+    private float[] mStartPos = {0, 0};
+    private float[] mEndPos = {0, 1};
+    private int[] mColors;
+    private int[] mSize = {0, 0};
+    private float mBorderRadius = 0f;
 
 
-        try {
-            ReadableArray locations = props.getArray("locations");
-            assert locations != null;
-            mLocations= new float[locations.size()];
-            for (int i=0; i < mLocations.length; i++)
-            {
-                mLocations[i] = (float) locations.getDouble(i);
-            }
-        } catch (Exception e) {
-            mLocations = null;
-        }
-
-        try {
-          ReadableArray startPos = props.getArray("start");
-          assert startPos != null;
-          mStartPos = new int[]{startPos.getInt(0), startPos.getInt(1)};
-        } catch (Exception e) {
-          mStartPos = new int[]{0,0};
-        }
-
-
-        try {
-            ReadableArray endPos = props.getArray("end");
-            assert endPos != null;
-            mEndPos= new int[]{endPos.getInt(0), endPos.getInt(1)};
-        } catch (Exception e) {
-          //default to full height.
-            mEndPos = new int[]{0, getMeasuredHeight()};
-        }
-
-        drawGradient(null, null, null, null);
+    public LinearGradientView(Context context) {
+        super(context);
     }
 
-    public void updateStartPosition(ReadableArray startPos) {
-      int[] _startPos;
-      try {
-        assert startPos != null;
-        _startPos= new int[]{startPos.getInt(0), startPos.getInt(1)};
-      } catch (Exception e) {
-        _startPos = new int[]{0,0};
-      }
-      drawGradient(_startPos, null, null, null);
+    public void setStartPosition(ReadableArray startPos) {
+        mStartPos = new float[]{(float) startPos.getDouble(0), (float) startPos.getDouble(1)};
+        drawGradient();
     }
 
-
-    public void updateEndPosition(ReadableArray endPos) {
-      int[] _endPos;
-      try {
-        assert endPos != null;
-        _endPos= new int[]{endPos.getInt(0), endPos.getInt(1)};
-      } catch (Exception e) {
-        _endPos = new int[]{0,0};
-      }
-      drawGradient(null,_endPos, null, null);
+    public void setEndPosition(ReadableArray endPos) {
+        mEndPos = new float[]{(float) endPos.getDouble(0), (float) endPos.getDouble(1)};
+        drawGradient();
     }
 
-
-    public void updateColors(ReadableArray colors){
+    public void setColors(ReadableArray colors) {
         int[] _colors = new int[colors.size()];
         for (int i=0; i < _colors.length; i++)
         {
             _colors[i] = colors.getInt(i);
         }
-        drawGradient(null, null, _colors, null);
+        mColors = _colors;
+        drawGradient();
     }
 
-    public void updateLocations(ReadableArray locations){
-        float[] _locations;
-        try {
-            assert locations != null;
-            _locations = new float[locations.size()];
-            for (int i=0; i < _locations.length; i++)
-            {
-                _locations[i] = (float) locations.getDouble(i);
-            }
-        } catch (Exception e) {
-            _locations = null;
+    public void setLocations(ReadableArray locations) {
+        float[] _locations = new float[locations.size()];
+        for (int i=0; i < _locations.length; i++)
+        {
+            _locations[i] = (float) locations.getDouble(i);
         }
-        drawGradient(null, null, null, _locations);
+        mLocations = _locations;
+        drawGradient();
+    }
+
+    public void setBorderRadius(float borderRadius) {
+        mBorderRadius = borderRadius;
+        updatePath();
+        drawGradient();
     }
 
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-        //TODO: Ensure that we don't override a specified startPos / endPos
-        int[] _endPos = new int[]{mEndPos[0], h};
-        drawGradient(null, _endPos, null, null);
+        mSize = new int[]{w, h};
+        updatePath();
+        drawGradient();
     }
 
-    private void drawGradient(int[] startPos, int[] endPos, int[] colors, float[] locations) {
-        mStartPos = startPos != null ? startPos : mStartPos;
-        mEndPos = endPos != null ? endPos : mEndPos;
-        mColors = colors != null ? colors : mColors;
-        mLocations = locations;
-        //locations can be null, thats just fine, so pass it as such.
-        mShader = new LinearGradient(mStartPos[0], mStartPos[1], mEndPos[0], mEndPos[1], mColors, locations, Shader.TileMode.MIRROR);
+    private void drawGradient() {
+        // guard against crashes happening while multiple properties are updated
+        if (mColors == null || (mLocations != null && mColors.length != mLocations.length))
+            return;
+        mShader = new LinearGradient(
+            mStartPos[0] * mSize[0],
+            mStartPos[1] * mSize[1],
+            mEndPos[0] * mSize[0],
+            mEndPos[1] * mSize[1],
+            mColors,
+            mLocations,
+            Shader.TileMode.MIRROR);
         mPaint.setShader(mShader);
         invalidate();
+    }
+
+    private void updatePath() {
+        if (mPathForBorderRadius == null) {
+            mPathForBorderRadius = new Path();
+            mTempRectForBorderRadius = new RectF();
+        }
+        mPathForBorderRadius.reset();
+        mTempRectForBorderRadius.set(0f, 0f, (float) mSize[0], (float) mSize[1]);
+        mPathForBorderRadius.addRoundRect(
+            mTempRectForBorderRadius,
+            mBorderRadius,
+            mBorderRadius,
+            Path.Direction.CW);
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        canvas.drawPaint(mPaint);
+        if (mPathForBorderRadius == null) {
+            canvas.drawPaint(mPaint);
+        } else {
+            canvas.drawPath(mPathForBorderRadius, mPaint);
+        }
     }
 }
